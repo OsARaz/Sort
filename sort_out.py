@@ -85,47 +85,53 @@ class KalmanFilter():
 
         ## Dynamic variables
         self.x = np.ones((dim_x, 1))  # estimation model
-        self.x_previous = np.ones((dim_x, 1))  # estimation model
+        self.x_predicted = self.x  # estimation model
+        self.x_previous = self.x
         self.P = np.eye(dim_x, dim_x)  # estimation var matrix
+        self.P_predicted = self.P
         self.S = np.eye(dim_x, dim_x)  # detection var matrix
-        self.rVelocity = 0  # target location
-        self.z = None  # target location
+        self.K_gain = None  #  kalman's gain
+        self.r_velocity = 0  # target location
         self.y = None  # difference from target to estimation
-        self.k = None  #  kalman's gain
 
         ## tracker's values
-        self.lost_frames =
+        self.lost_frames = 0
         self.max_lost_frames = 2
 
+    def predict_x(self):  # to be called once on update
+        self.x_predicted[:3] += self.x[4:7]  # increment location and area by velocities
+        self.x_predicted[3] += self.r_velocity  # increment ration by velocity
 
-# @property
-#     def k(self):
-#         return None
+    def predict_P(self):
+        self.P_predicted = np.dot(np.dot(self.F, self.P), self.F.T) + self.Q
 
-    def upF(self,bbox):
-
-
-    def update_velocities(self,bbox):  # to be called after x is evaluated
+    def update_x(self):
+        self.x_previous = self.x
+        self.x = self.x_predicted + np.dot(self.K, self.y)  # should be plus sign from wikipedia and logic
+        # update velocities
         self.x[4:7] = self.x[:3]-self.x_previous[:3]
         self.r_velocity = self.x[3] - bbox[3]
 
-    def predict(self):  # to be called once on update
-        self.x_previous = self.x
-        self.x[:3] += self.x[4:7]  # increment location and area by velocities
-        self.x[3] += self.r_velocity  # increment ration by velocity
+    def update_K(self):
+        numerator = np.dot(self.P_predicted, self.H.T)
+        denumerator = np.dot(np.dot(self.H,self.P_predicted), self.H.T) + self.R
+        self.K_gain = np.dot(numerator, np.linalg.inv(denumerator))
 
-        return self.x
+    def update_P(self):
+        I = np.eye(self.x_dim, self.x_dim)
+        IKH = np.dot(I - np.dot(self.K_gain, self.H))
+        self.P = np.dot(np.dot(IKH,self.P_predicted), IKH.T) + np.dot(np.dot(self.K_gain,self.R),self.K_gain.T)
 
     def update(self, bbox):  # consider prediction, return evaluated values.
-        self.predict()  # updates x location
-        y = bbox - self.H * self.x
-        self.update_P()
+        self.predict_x()  # updates x location
+        self.predict_P()
+        self.y = bbox - np.dot(self.H, self.x_predicted)
         self.update_K()
         self.update_x()  # updates x location based on detection
-        self.update_velocities(bbox)
+        self.update_P()
 
         # self.x[:4]=bbox
-        return self.x
+        return self.x[:4]
 
 
 class KalmanBoxTracker(object):
@@ -139,7 +145,7 @@ class KalmanBoxTracker(object):
         Initialises a tracker using initial bounding box.
         """
         # define constant velocity model
-        self.kf = KalmanFilter(dim_x=4, dim_z=4)
+        self.kf = KalmanFilter(dim_x=7, dim_z=4)
         self.kf.F = np.array(
             [[1., 0, 0, 0, 1, 0, 0], [0, 1, 0, 0, 0, 1, 0], [0, 0, 1, 0, 0, 0, 1], [0, 0, 0, 1, 0, 0, 0],
              [0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 0, 1]])
