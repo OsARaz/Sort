@@ -73,35 +73,59 @@ def convert_x_to_bbox(x, score=None):
 
 
 class KalmanFilter():
-    def __init__(self, dim_x=1, dim_z=1):
+    def __init__(self, dim_x=7, dim_z=4):
         ## static variables
-        self.dim_x = dim_x
+        self.dim_x = dim_x  # dim of varibles we look at (2 locations, 2 ranges, 4 total velocities)
         self.dim_z = dim_z
         self.F = np.eye(dim_x, dim_x)  # projection matrix from state to state
+        self.F[[0,1,2],[4,5,6]] = 1
         self.Q = np.eye(dim_x, dim_x)  # noise to variance matrix
         self.R = np.eye(dim_z, dim_z)  # detection noise mat
         self.H = np.eye(dim_x, dim_z)  # state to location matrix
 
         ## Dynamic variables
-        self.x = np.ones((dim_x, 1))   # estimation model
+        self.x = np.ones((dim_x, 1))  # estimation model
+        self.x_previous = np.ones((dim_x, 1))  # estimation model
         self.P = np.eye(dim_x, dim_x)  # estimation var matrix
         self.S = np.eye(dim_x, dim_x)  # detection var matrix
-        self.z =   # target location
-        self.y =   # difference from target to estimation
-        self.k =   #  kalman's gain
+        self.rVelocity = 0  # target location
+        self.z = None  # target location
+        self.y = None  # difference from target to estimation
+        self.k = None  #  kalman's gain
 
-    @property
-    def k(self):
-        return None
+        ## tracker's values
+        self.lost_frames =
+        self.max_lost_frames = 2
 
 
-    def predict(self):
-        self.x[:2]+=self.x[4:6]
+# @property
+#     def k(self):
+#         return None
+
+    def upF(self,bbox):
+
+
+    def update_velocities(self,bbox):  # to be called after x is evaluated
+        self.x[4:7] = self.x[:3]-self.x_previous[:3]
+        self.r_velocity = self.x[3] - bbox[3]
+
+    def predict(self):  # to be called once on update
+        self.x_previous = self.x
+        self.x[:3] += self.x[4:7]  # increment location and area by velocities
+        self.x[3] += self.r_velocity  # increment ration by velocity
+
         return self.x
 
-    def update(self, bbox):
-        self.x[:4]=bbox
-        return
+    def update(self, bbox):  # consider prediction, return evaluated values.
+        self.predict()  # updates x location
+        y = bbox - self.H * self.x
+        self.update_P()
+        self.update_K()
+        self.update_x()  # updates x location based on detection
+        self.update_velocities(bbox)
+
+        # self.x[:4]=bbox
+        return self.x
 
 
 class KalmanBoxTracker(object):
@@ -115,7 +139,7 @@ class KalmanBoxTracker(object):
         Initialises a tracker using initial bounding box.
         """
         # define constant velocity model
-        self.kf = KalmanFilter(dim_x=7, dim_z=4)
+        self.kf = KalmanFilter(dim_x=4, dim_z=4)
         self.kf.F = np.array(
             [[1., 0, 0, 0, 1, 0, 0], [0, 1, 0, 0, 0, 1, 0], [0, 0, 1, 0, 0, 0, 1], [0, 0, 0, 1, 0, 0, 0],
              [0, 0, 0, 0, 1, 0, 0], [0, 0, 0, 0, 0, 1, 0], [0, 0, 0, 0, 0, 0, 1]])
