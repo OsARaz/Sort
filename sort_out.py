@@ -90,13 +90,18 @@ class KalmanFilter():
         self.P = np.eye(dim_x, dim_x)  # estimation var matrix
         self.P_predicted = self.P
         self.S = np.eye(dim_x, dim_x)  # detection var matrix
-        self.K_gain = None  #  kalman's gain
+        self.K = None  #  kalman's gain
         self.r_velocity = 0  # target location
         self.y = None  # difference from target to estimation
 
         ## tracker's values
         self.lost_frames = 0
         self.max_lost_frames = 2
+
+    def predict(self):
+        self.predict_x()
+        self.predict_P()
+        return self.x_predicted
 
     def predict_x(self):  # to be called once on update
         self.x_predicted[:3] += self.x[4:7]  # increment location and area by velocities
@@ -110,21 +115,21 @@ class KalmanFilter():
         self.x = self.x_predicted + np.dot(self.K, self.y)  # should be plus sign from wikipedia and logic
         # update velocities
         self.x[4:7] = self.x[:3]-self.x_previous[:3]
-        self.r_velocity = self.x[3] - bbox[3]
+        self.r_velocity = self.x[3] - self.x_previous[3]
 
     def update_K(self):
         numerator = np.dot(self.P_predicted, self.H.T)
         denumerator = np.dot(np.dot(self.H,self.P_predicted), self.H.T) + self.R
-        self.K_gain = np.dot(numerator, np.linalg.inv(denumerator))
+        self.K = np.dot(numerator, np.linalg.inv(denumerator))
 
     def update_P(self):
-        I = np.eye(self.x_dim, self.x_dim)
-        IKH = np.dot(I - np.dot(self.K_gain, self.H))
-        self.P = np.dot(np.dot(IKH,self.P_predicted), IKH.T) + np.dot(np.dot(self.K_gain,self.R),self.K_gain.T)
+        I = np.eye(self.dim_x, self.dim_x)
+        IKH = np.dot(I - np.dot(self.K, self.H))
+        self.P = np.dot(np.dot(IKH,self.P_predicted), IKH.T) + np.dot(np.dot(self.K,self.R),self.K.T)
 
     def update(self, bbox):  # consider prediction, return evaluated values.
-        self.predict_x()  # updates x location
-        self.predict_P()
+        #self.predict_x()  # updates x location
+        #self.predict_P()
         self.y = bbox - np.dot(self.H, self.x_predicted)
         self.update_K()
         self.update_x()  # updates x location based on detection
