@@ -124,7 +124,7 @@ class KalmanFilter():
 
     def update_P(self):
         I = np.eye(self.dim_x, self.dim_x)
-        IKH = np.dot(I - np.dot(self.K, self.H))
+        IKH = I - np.dot(self.K, self.H)
         self.P = np.dot(np.dot(IKH,self.P_predicted), IKH.T) + np.dot(np.dot(self.K,self.R),self.K.T)
 
     def update(self, bbox):  # consider prediction, return evaluated values.
