@@ -74,15 +74,26 @@ def convert_x_to_bbox(x, score=None):
 
 class KalmanFilter():
     def __init__(self, dim_x=1, dim_z=1):
+        ## static variables
         self.dim_x = dim_x
         self.dim_z = dim_z
-        self.F = np.eye(dim_x, dim_x)
-        self.H = np.eye(dim_x, dim_z)
-        self.R = np.eye(dim_z, dim_z)
-        self.P = np.eye(dim_x, dim_x)
+        self.F = np.eye(dim_x, dim_x)  # projection matrix from state to state
+        self.Q = np.eye(dim_x, dim_x)  # noise to variance matrix
+        self.R = np.eye(dim_z, dim_z)  # detection noise mat
+        self.H = np.eye(dim_x, dim_z)  # state to location matrix
 
-        self.Q = np.eye(dim_x, dim_x)
-        self.x = np.ones((dim_x, 1))
+        ## Dynamic variables
+        self.x = np.ones((dim_x, 1))   # estimation model
+        self.P = np.eye(dim_x, dim_x)  # estimation var matrix
+        self.S = np.eye(dim_x, dim_x)  # detection var matrix
+        self.z =   # target location
+        self.y =   # difference from target to estimation
+        self.k =   #  kalman's gain
+
+    @property
+    def k(self):
+        return None
+
 
     def predict(self):
         self.x[:2]+=self.x[4:6]
