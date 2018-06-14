@@ -26,6 +26,7 @@ from skimage import io
 from sklearn.utils.linear_assignment_ import linear_assignment
 import time
 import argparse
+from filterpy.kalman import KalmanFilter
 
 @jit
 def iou(bb_test, bb_gt):
@@ -72,7 +73,7 @@ def convert_x_to_bbox(x, score=None):
         return np.array([x[0] - w / 2., x[1] - h / 2., x[0] + w / 2., x[1] + h / 2., score]).reshape((1, 5))
 
 
-class KalmanFilter():
+class KalmanFilter1():
     def __init__(self, dim_x=7, dim_z=4):
         ## static variables
         self.dim_x = dim_x  # dim of varibles we look at (2 locations, 2 ranges, 4 total velocities)
@@ -218,13 +219,14 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold=0.3):
             iou_matrix[d, t] = iou(det, trk)
     matched_indices = linear_assignment(-iou_matrix)
 
-    unmatched_detections = []
+    unmatched_detections = [] #new detections
     for d, det in enumerate(detections):
-        if False:
+        if d not in matched_indices[:, [0]]:
             unmatched_detections.append(d)
-    unmatched_trackers = []
+
+    unmatched_trackers = [] #trackers that are out from the picture
     for t, trk in enumerate(trackers):
-        if False:
+        if t not in matched_indices[:, [1]]:
             unmatched_trackers.append(t)
 
     # filter out matched with low IOU
@@ -276,7 +278,7 @@ class Sort(object):
         trks = np.ma.compress_rows(np.ma.masked_invalid(trks))
 
         for t in reversed(to_del):
-            pass
+            unmatched_trks.remove(t)
         matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(dets, trks)
 
         # update matched trackers with assigned detections
