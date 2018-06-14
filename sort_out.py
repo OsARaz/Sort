@@ -26,6 +26,7 @@ from skimage import io
 from sklearn.utils.linear_assignment_ import linear_assignment
 import time
 import argparse
+# from filterpy.kalman import KalmanFilter
 
 @jit
 def iou(bb_test, bb_gt):
@@ -73,24 +74,65 @@ def convert_x_to_bbox(x, score=None):
 
 
 class KalmanFilter():
-    def __init__(self, dim_x=1, dim_z=1):
-        self.dim_x = dim_x
+    def __init__(self, dim_x=7, dim_z=4):
+        ## static variables
+        self.dim_x = dim_x  # dim of varibles we look at (2 locations, 2 ranges, 4 total velocities)
         self.dim_z = dim_z
-        self.F = np.eye(dim_x, dim_x)
-        self.H = np.eye(dim_x, dim_z)
-        self.R = np.eye(dim_z, dim_z)
-        self.P = np.eye(dim_x, dim_x)
+        self.F = np.eye(dim_x, dim_x)  # projection matrix from state to state
+        self.Q = np.eye(dim_x, dim_x)  # noise to variance matrix
+        self.R = np.eye(dim_z, dim_z)  # detection noise mat
+        self.H = np.eye(dim_x, dim_z)  # state to location matrix
 
-        self.Q = np.eye(dim_x, dim_x)
-        self.x = np.ones((dim_x, 1))
+        ## Dynamic variables
+        self.x = np.ones((dim_x, 1))  # estimation model
+        self.x_predicted = self.x  # estimation model
+        self.x_previous = self.x
+        self.P = np.eye(dim_x, dim_x)  # estimation var matrix
+        self.P_predicted = self.P
+        self.S = np.eye(dim_x, dim_x)  # detection var matrix
+        self.K = None  #  kalman's gain
+        self.r_velocity = 0  # target location
+        self.y = None  # difference from target to estimation
 
     def predict(self):
-        self.x[:2]+=self.x[4:6]
-        return self.x
+        self.predict_x()
+        self.predict_P()
+        return self.x_predicted
 
-    def update(self, bbox):
-        self.x[:4]=bbox
-        return
+    def predict_x(self):  # to be called once on update
+        self.x_predicted = np.dot(self.F,self.x)
+
+    def predict_P(self):
+        self.P_predicted = np.dot(np.dot(self.F, self.P), self.F.T) + self.Q
+
+    def update_x(self):
+        self.x_previous = self.x
+        self.x = self.x_predicted + np.dot(self.K, self.y)  # should be plus sign from wikipedia and logic
+
+        # update velocities
+        self.x[4:7] = self.x[:3]-self.x_previous[:3]
+        self.r_velocity = self.x[3] - self.x_previous[3]
+
+    def update_K(self):
+        numerator = np.dot(self.P_predicted, self.H.T)
+        denumerator = np.dot(np.dot(self.H,self.P_predicted), self.H.T) + self.R
+        self.K = np.dot(numerator, np.linalg.inv(denumerator))
+
+    def update_P(self):
+        I = np.eye(self.dim_x, self.dim_x)
+        IKH = I - np.dot(self.K, self.H)
+        self.P = np.dot(np.dot(IKH,self.P_predicted), IKH.T) + np.dot(np.dot(self.K,self.R),self.K.T)
+
+    def update(self, bbox):  # consider prediction, return evaluated values.
+        #self.predict_x()  # updates x location
+        #self.predict_P()
+        self.y = bbox - np.dot(self.H, self.x_predicted)
+        self.update_K()
+        self.update_x()  # updates x location based on detection
+        self.update_P()
+
+        # self.x[:4]=bbox
+        return self.x[:4]
 
 
 class KalmanBoxTracker(object):
@@ -157,7 +199,7 @@ class KalmanBoxTracker(object):
         return convert_x_to_bbox(self.kf.x)
 
 
-def associate_detections_to_trackers(detections, trackers, iou_threshold=0.3):
+def associate_detections_to_trackers(detections, trackers, iou_threshold=0.2):
     """
     Assigns detections to tracked object (both represented as bounding boxes)
 
@@ -172,19 +214,20 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold=0.3):
             iou_matrix[d, t] = iou(det, trk)
     matched_indices = linear_assignment(-iou_matrix)
 
-    unmatched_detections = []
+    unmatched_detections = [] #new detections
     for d, det in enumerate(detections):
-        if False:
+        if d not in matched_indices[:, [0]]:
             unmatched_detections.append(d)
-    unmatched_trackers = []
+
+    unmatched_trackers = [] #trackers that are out from the picture
     for t, trk in enumerate(trackers):
-        if False:
+        if t not in matched_indices[:, [1]]:
             unmatched_trackers.append(t)
 
     # filter out matched with low IOU
     matches = []
     for m in matched_indices:
-        if False:
+        if iou_matrix[m[0],m[1]] < iou_threshold:
             unmatched_detections.append(m[0])
             unmatched_trackers.append(m[1])
         else:
@@ -198,7 +241,7 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold=0.3):
 
 
 class Sort(object):
-    def __init__(self, max_age=1, min_hits=3):
+    def __init__(self, max_age=15, min_hits=3):
         """
         Sets key parameters for SORT
         """
@@ -226,11 +269,12 @@ class Sort(object):
             pos = self.trackers[t].predict()[0]
             trk[:] = [pos[0], pos[1], pos[2], pos[3], 0]
             if np.any(np.isnan(pos)):
-                to_del.append(t)
+                to_del.append(t)  ## TODO
         trks = np.ma.compress_rows(np.ma.masked_invalid(trks))
 
         for t in reversed(to_del):
-            pass
+            pass  ##
+            # unmatched_trks.remove(t)  ## TODO
         matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(dets, trks)
 
         # update matched trackers with assigned detections
@@ -245,17 +289,17 @@ class Sort(object):
             trk = KalmanBoxTracker(dets[i, :])
             self.trackers.append(trk)
 
-        i = len(self.trackers)
+        # i = len(self.trackers)
         for trk in reversed(self.trackers):
             d = trk.get_state()[0]
 
-            if trk.time_since_update < 1:
+            if (trk.time_since_update < 1 and trk.hit_streak > self.min_hits) or (trk.hits > self.min_hits*3 and trk.time_since_update < 4) :  # if have been updated this frame
                 ret.append(np.concatenate((d, [trk.id + 1])).reshape(1, -1))  # +1 as MOT benchmark requires positive
-            i -= 1
+            # i -= 1
             # remove dead tracklet
 
             if trk.time_since_update > self.max_age:
-                pass
+                self.trackers.remove(trk)
 
         if len(ret) > 0:
             return np.concatenate(ret)
