@@ -79,7 +79,6 @@ class KalmanFilter():
         self.dim_x = dim_x  # dim of varibles we look at (2 locations, 2 ranges, 4 total velocities)
         self.dim_z = dim_z
         self.F = np.eye(dim_x, dim_x)  # projection matrix from state to state
-        self.F[[0,1,2],[4,5,6]] = 1
         self.Q = np.eye(dim_x, dim_x)  # noise to variance matrix
         self.R = np.eye(dim_z, dim_z)  # detection noise mat
         self.H = np.eye(dim_x, dim_z)  # state to location matrix
@@ -95,18 +94,13 @@ class KalmanFilter():
         self.r_velocity = 0  # target location
         self.y = None  # difference from target to estimation
 
-        ## tracker's values
-        self.lost_frames = 0
-        self.max_lost_frames = 2
-
     def predict(self):
         self.predict_x()
         self.predict_P()
         return self.x_predicted
 
     def predict_x(self):  # to be called once on update
-        self.x_predicted[:3] += self.x[4:7]  # increment location and area by velocities
-        self.x_predicted[3] += self.r_velocity  # increment ration by velocity
+        self.x_predicted = np.dot(self.F,self.x)
 
     def predict_P(self):
         self.P_predicted = np.dot(np.dot(self.F, self.P), self.F.T) + self.Q
@@ -114,6 +108,7 @@ class KalmanFilter():
     def update_x(self):
         self.x_previous = self.x
         self.x = self.x_predicted + np.dot(self.K, self.y)  # should be plus sign from wikipedia and logic
+
         # update velocities
         self.x[4:7] = self.x[:3]-self.x_previous[:3]
         self.r_velocity = self.x[3] - self.x_previous[3]
@@ -298,7 +293,7 @@ class Sort(object):
         for trk in reversed(self.trackers):
             d = trk.get_state()[0]
 
-            if (trk.time_since_update < 1 and trk.hit_streak > self.min_hits) or (trk.hits > self.min_hits*4 and trk.time_since_update < 4) :  # if have been updated this frame
+            if (trk.time_since_update < 1 and trk.hit_streak > self.min_hits) or (trk.hits > self.min_hits*3 and trk.time_since_update < 4) :  # if have been updated this frame
                 ret.append(np.concatenate((d, [trk.id + 1])).reshape(1, -1))  # +1 as MOT benchmark requires positive
             # i -= 1
             # remove dead tracklet
