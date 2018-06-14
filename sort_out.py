@@ -26,7 +26,7 @@ from skimage import io
 from sklearn.utils.linear_assignment_ import linear_assignment
 import time
 import argparse
-from filterpy.kalman import KalmanFilter
+# from filterpy.kalman import KalmanFilter
 
 @jit
 def iou(bb_test, bb_gt):
@@ -73,7 +73,7 @@ def convert_x_to_bbox(x, score=None):
         return np.array([x[0] - w / 2., x[1] - h / 2., x[0] + w / 2., x[1] + h / 2., score]).reshape((1, 5))
 
 
-class KalmanFilter1():
+class KalmanFilter():
     def __init__(self, dim_x=7, dim_z=4):
         ## static variables
         self.dim_x = dim_x  # dim of varibles we look at (2 locations, 2 ranges, 4 total velocities)
@@ -204,7 +204,7 @@ class KalmanBoxTracker(object):
         return convert_x_to_bbox(self.kf.x)
 
 
-def associate_detections_to_trackers(detections, trackers, iou_threshold=0.3):
+def associate_detections_to_trackers(detections, trackers, iou_threshold=0.2):
     """
     Assigns detections to tracked object (both represented as bounding boxes)
 
@@ -232,7 +232,7 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold=0.3):
     # filter out matched with low IOU
     matches = []
     for m in matched_indices:
-        if False:
+        if iou_matrix[m[0],m[1]] < iou_threshold:
             unmatched_detections.append(m[0])
             unmatched_trackers.append(m[1])
         else:
@@ -246,7 +246,7 @@ def associate_detections_to_trackers(detections, trackers, iou_threshold=0.3):
 
 
 class Sort(object):
-    def __init__(self, max_age=1, min_hits=3):
+    def __init__(self, max_age=15, min_hits=3):
         """
         Sets key parameters for SORT
         """
@@ -274,11 +274,12 @@ class Sort(object):
             pos = self.trackers[t].predict()[0]
             trk[:] = [pos[0], pos[1], pos[2], pos[3], 0]
             if np.any(np.isnan(pos)):
-                to_del.append(t)
+                to_del.append(t)  ## TODO
         trks = np.ma.compress_rows(np.ma.masked_invalid(trks))
 
         for t in reversed(to_del):
-            unmatched_trks.remove(t)
+            pass  ##
+            # unmatched_trks.remove(t)  ## TODO
         matched, unmatched_dets, unmatched_trks = associate_detections_to_trackers(dets, trks)
 
         # update matched trackers with assigned detections
@@ -293,17 +294,17 @@ class Sort(object):
             trk = KalmanBoxTracker(dets[i, :])
             self.trackers.append(trk)
 
-        i = len(self.trackers)
+        # i = len(self.trackers)
         for trk in reversed(self.trackers):
             d = trk.get_state()[0]
 
-            if trk.time_since_update < 1:
+            if (trk.time_since_update < 1 and trk.hit_streak > self.min_hits) or (trk.hits > self.min_hits*4 and trk.time_since_update < 4) :  # if have been updated this frame
                 ret.append(np.concatenate((d, [trk.id + 1])).reshape(1, -1))  # +1 as MOT benchmark requires positive
-            i -= 1
+            # i -= 1
             # remove dead tracklet
 
             if trk.time_since_update > self.max_age:
-                pass
+                self.trackers.remove(trk)
 
         if len(ret) > 0:
             return np.concatenate(ret)
