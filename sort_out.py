@@ -27,6 +27,8 @@ from sklearn.utils.linear_assignment_ import linear_assignment
 import time
 import argparse
 # from filterpy.kalman import KalmanFilter
+from elad_filter import KalmanFilter
+
 
 @jit
 def iou(bb_test, bb_gt):
@@ -73,7 +75,7 @@ def convert_x_to_bbox(x, score=None):
         return np.array([x[0] - w / 2., x[1] - h / 2., x[0] + w / 2., x[1] + h / 2., score]).reshape((1, 5))
 
 
-class KalmanFilter():
+class AnotherKalmanFilter():
     def __init__(self, dim_x=7, dim_z=4):
         ## static variables
         self.dim_x = dim_x  # dim of varibles we look at (2 locations, 2 ranges, 4 total velocities)
